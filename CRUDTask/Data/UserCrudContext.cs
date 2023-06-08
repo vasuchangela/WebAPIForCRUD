@@ -7,20 +7,22 @@ namespace CRUDTask.Data;
 
 public partial class UserCrudContext : DbContext
 {
+    private IConfiguration _configuration;
     public UserCrudContext()
     {
     }
 
-    public UserCrudContext(DbContextOptions<UserCrudContext> options)
+    public UserCrudContext(DbContextOptions<UserCrudContext> options, IConfiguration configuration)
         : base(options)
     {
+        _configuration = configuration;
     }
 
     public virtual DbSet<User> Users { get; set; }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
 #warning To protect potentially sensitive information in your connection string, you should move it out of source code. You can avoid scaffolding the connection string by using the Name= syntax to read it from configuration - see https://go.microsoft.com/fwlink/?linkid=2131148. For more guidance on storing connection strings, see http://go.microsoft.com/fwlink/?LinkId=723263.
-        => optionsBuilder.UseSqlServer("Server=PCI154\\SQL2019;Database=UserCRUD;TrustServerCertificate=True;Trusted_Connection=true");
+        => optionsBuilder.UseSqlServer(_configuration.GetConnectionString("defaultConnection"));
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
