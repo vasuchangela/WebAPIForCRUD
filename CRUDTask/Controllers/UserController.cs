@@ -15,11 +15,36 @@ namespace CRUDTask.Controllers
         {
             _dbContext = userCrudContext;
         }
+
+
         [HttpGet]
-        public async Task<IActionResult> getAllUsers()
+        public async Task<IActionResult> getAllUsers(int pg, int pageSize,string searchText)
         {
-            var users = _dbContext.Users.Where(x=>x.DeletedAt == null).ToList();
-            return Ok(users);
+            var allUsers = _dbContext.Users.Where(x => x.DeletedAt == null).ToList();
+            if (searchText == "undefined" || searchText.Length < 3 || searchText=="")
+            {
+                allUsers = _dbContext.Users.Where(x => x.DeletedAt == null).ToList();
+            }
+            else
+            {
+                allUsers = _dbContext.Users.Where(x=>x.DeletedAt == null && (x.FirstName.ToLower().Contains(searchText.ToLower()) || x.LastName.ToLower().Contains(searchText.ToLower()) || x.Email.ToLower().Contains(searchText.ToLower()))).ToList();
+            }
+            if (pg < 1)
+            {
+                pg = 1;
+            }
+            int recsCount = allUsers.Count();
+            var pager = new Pager(recsCount, pg, pageSize);
+            int recSkip = (pg - 1) * pageSize;
+            var data = allUsers.Skip(recSkip).Take(pager.PageSize).ToList();
+            var users = data.ToList();
+            var response = new
+            {
+                TotalEntries = recsCount,
+                user = data,
+                totalPage = pager.EndPage
+            };
+            return Ok(response);
         }
 
         [HttpPost]
