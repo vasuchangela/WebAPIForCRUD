@@ -1,7 +1,9 @@
 ﻿using CRUDTask.Data;
 using CRUDTask.DataModels;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using System.Data;
 using System.Text.RegularExpressions;
 
 namespace CRUDTask.Controllers
@@ -11,89 +13,87 @@ namespace CRUDTask.Controllers
     public class UserController : Controller
     {
         private readonly UserCrudContext _dbContext;
-        public UserController(UserCrudContext userCrudContext)
+        private IConfiguration _configuration;
+        public UserController(UserCrudContext userCrudContext, IConfiguration configuration)
         {
             _dbContext = userCrudContext;
+            _configuration = configuration;
         }
 
 
         [HttpGet]
-        public async Task<IActionResult> getAllUsers(int pg, int pageSize,string searchText)
+        public async Task<IActionResult> GetAllUsers(int pg, int pageSize, string searchText)
         {
-            var allUsers = _dbContext.Users.Where(x => x.DeletedAt == null).ToList();
-            if (searchText == "undefined" || searchText.Length < 3 || searchText=="")
+            var users = new List<User>();
+
+            using (var connection = new SqlConnection(_configuration.GetConnectionString("defaultConnection")))
             {
-                allUsers = _dbContext.Users.Where(x => x.DeletedAt == null).ToList();
+                await connection.OpenAsync();
+
+                var command = new SqlCommand("GetAllUsers", connection);
+                command.CommandType = CommandType.StoredProcedure;
+
+                command.Parameters.AddWithValue("@pg", pg);
+                command.Parameters.AddWithValue("@pageSize", pageSize);
+                command.Parameters.AddWithValue("@searchText", searchText);
+
+                using (var reader = await command.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        var user = new User
+                        {
+                            Id = (int)reader["Id"],
+                            FirstName = (string)reader["FirstName"],
+                            LastName = (string)reader["LastName"],
+                            Email = (string)reader["Email"],
+                            StreetAddress = (string)reader["StreetAddress"],
+                            City = (string)reader["City"],
+                            State = (string)reader["State"],
+                            UserName = (string)reader["UserName"],
+                            Password = (string)reader["Password"],
+                            Phone = (string)reader["Phone"],
+                        };
+                        users.Add(user);
+                    }
+
+                    await reader.NextResultAsync();
+                    if (await reader.ReadAsync())
+                    {
+                        var totalPage = (int)reader["TotalPage"];
+                        var response = new
+                        {
+                            TotalEntries = users.Count(),
+                            user = users,
+                            totalPage = totalPage
+                        };
+                        return Ok(response);
+                    }
+                }
             }
-            else
-            {
-                allUsers = _dbContext.Users.Where(x=>x.DeletedAt == null && (x.FirstName.ToLower().Contains(searchText.ToLower()) || x.LastName.ToLower().Contains(searchText.ToLower()) || x.Email.ToLower().Contains(searchText.ToLower()))).ToList();
-            }
-            if (pg < 1)
-            {
-                pg = 1;
-            }
-            int recsCount = allUsers.Count();
-            var pager = new Pager(recsCount, pg, pageSize);
-            int recSkip = (pg - 1) * pageSize;
-            var data = allUsers.Skip(recSkip).Take(pager.PageSize).ToList();
-            var users = data.ToList();
-            var response = new
-            {
-                TotalEntries = recsCount,
-                user = data,
-                totalPage = pager.EndPage
-            };
-            return Ok(response);
+
+            return NotFound();
         }
 
         [HttpPost]
         public async Task<IActionResult> addUser([FromBody] User userRequest)
         {
-            var existingUserName = await _dbContext.Users.FirstOrDefaultAsync(x=>x.UserName == userRequest.UserName);
-            var existingEmail = await _dbContext.Users.FirstOrDefaultAsync(x => x.Email == userRequest.Email);
-            if (existingEmail != null)
+            if (!ModelState.IsValid)
             {
-                return BadRequest("Email ID is already exist");
-            }
-            else if (existingUserName != null)
-            {
-                return BadRequest("User name is already exist");
-            }
-            else if (userRequest.FirstName == "")
-            {
-                return BadRequest("First Name is required");
-            }
-            else if (userRequest.LastName == "")
-            {
-                return BadRequest("Last Name is required");
-            }
-            else if (userRequest.Email == "")
-            {
-                return BadRequest("Email is required");
-            }
-            else if (userRequest.Phone == "")
-            {
-                return BadRequest("Phone number is required");
-            }
-            else if (userRequest.Phone.Length != 10)
-            {
-                return BadRequest("Length of phone number should be 10");
-            }
-            else if (userRequest.StreetAddress == "")
-            {
-                return BadRequest("Street Address is required");
-            }
-            else if (userRequest.UserName == "")
-            {
-                return BadRequest("User Name required");
-            }
-            else if (userRequest.Password.Length < 6)
-            {
-                return BadRequest("Password shold be 6 characters long");
+                return BadRequest(ModelState);
             }
             else
             {
+                var existingUserName = await _dbContext.Users.FirstOrDefaultAsync(x => x.UserName == userRequest.UserName);
+                var existingEmail = await _dbContext.Users.FirstOrDefaultAsync(x => x.Email == userRequest.Email);
+                if (existingEmail != null)
+                {
+                    return BadRequest("Email ID is already exist");
+                }
+                else if (existingUserName != null)
+                {
+                    return BadRequest("User name is already exist");
+                }
                 await _dbContext.Users.AddAsync(userRequest);
                 await _dbContext.SaveChangesAsync();
                 return Ok(userRequest);
@@ -124,45 +124,17 @@ namespace CRUDTask.Controllers
             {
                 return NotFound();
             }
-            if(existingEmail!= null)
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+            else if(existingEmail!= null)
             {
                 return BadRequest("Email ID is already exist");
             }
             else if(existingUserName!= null)
             {
                 return BadRequest("User name is already exist");
-            }
-            else if (updateUser.FirstName == "")
-            {
-                return BadRequest("First Name is required");
-            }
-            else if (updateUser.LastName == "")
-            {
-                return BadRequest("Last Name is required");
-            }
-            else if (updateUser.Email == "")
-            {
-                return BadRequest("Email is required");
-            }
-            else if (updateUser.Phone == "")
-            {
-                return BadRequest("Phone number is required");
-            }
-            else if (updateUser.StreetAddress == "")
-            {
-                return BadRequest("Street Address is required");
-            }
-            else if(updateUser.Phone.Length != 10)
-            {
-                return BadRequest("Length of phone number should be 10");
-            }
-            else if (updateUser.UserName == "")
-            {
-                return BadRequest("User Name required");
-            }
-            else if (updateUser.Password.Length < 6)
-            {
-                return BadRequest("Password shold be 6 characters long");
             }
             else
             {
@@ -192,7 +164,7 @@ namespace CRUDTask.Controllers
             }
             user.DeletedAt = DateTime.Now;
             _dbContext.Users.Update(user);
-            await _dbContext.SaveChangesAsync();
+            _dbContext.SaveChanges();
             return Ok();
         }
     }
